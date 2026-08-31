@@ -44,12 +44,12 @@ We used a Random Forest classifier, since it can combine several signals togethe
 
 We tested four other columns as possible features and left all of them out. `search_volume` showed no clear pattern between its buckets. `backlinks` was missing for over half the rows and also showed no clear pattern. `competition` and `word_count` both looked promising at first, each showing what seemed like a real pattern across their buckets, but when we checked closer, both patterns matched almost exactly with which pages had any search impressions at all. In other words, these two columns were not actually predicting decline, they were just standing in for whether a page had impressions, something we already capture directly with `has_impressions`. Since we already have that signal from a cleaner source, we left both out.
 
-![](charts/Candidate_feature_rejection.png)
-![](charts/word_count_and_competition.png)
+![](outputs/Candidate_feature_rejection.png)
+![](outputs/word_count_and_competition.png)
 
 The biggest challenge we found is that 55.1% of all rows share the exact same values across our five kept features, meaning the model sees many pages that look completely identical to each other on paper. Most of this comes from pages with zero search impressions, since they all get the same filled in average position value, collapsing them into indistinguishable rows. No model can rank two identical looking rows differently, so this sets a real ceiling on how well any model, ours included, can do on this data.
 
-![](charts/Feature_Collision.png)
+![](outputs/Feature_Collision.png)
 
 ## 4. Results
 
@@ -59,22 +59,22 @@ We split our data by client, not randomly by row, since pages from the same clie
 
 Since a single test split can bounce around by chance, especially with only 52 clients total, we also ran a 5-fold cross validation, where we split the clients into 5 different groups and tested on each group in turn. We used this cross validation to search across different model settings, testing 20 combinations of tree depth and leaf size, and picked the setting with the best balance of a high average score and a low spread across folds. Our chosen setting reached a cross validation average precision of `0.652`, with a spread of `0.085` across folds. On our held out test split, the model reaches a precision of `0.38` in its top 50 ranked pages, compared to `0.153` for our baseline rule and `0.106` for picking pages at random, meaning the model is about 2.5 times better than the baseline rule and about 3.6 times better than random guessing on the same test data and metric. We rely more on the cross validation average of 0.652 than on this single test number, since we already know single splits can move around quite a bit with this small a client pool.
 
-![](charts/Hyperparameter_sweep_heatmap.png)
-![](charts/precision@50.png)
+![](outputs/Hyperparameter_sweep_heatmap.png)
+![](outputs/precision@50.png)
 
 A natural question here is whether widening our study window would help by adding more clients to train and test on. It would not, since client count only grows because FlyRank keeps onboarding new clients over time, so looking further back in time means fewer clients existed back then, not more. We did test widening the window itself, from 15 days up to 365 days, and this does reduce the zero impression problem by about 12 points. But it comes with a coverage tradeoff: at a 180 day window, only 4.3% of rows actually have the full 180 days of history available, since many clients were not FlyRank clients that far back. So a wider window trades one data problem for another, rather than fixing it outright.
 
-![](charts/Window_widening_tradeoff.png)
+![](outputs/Window_widening_tradeoff.png)
 
 ### Interpretation
 
 We looked at feature importance to see what the model actually relied on. `total_impressions_h1` mattered the most by far, followed closely by `age_x_impressions`, our combined feature multiplying age and impressions. `has_impressions` and `avg_position_h1` mattered some, but much less. `content_age_days` on its own barely mattered at all, even though it looked useful in our early bucket checks. This tells us the model leans almost entirely on how much search traffic a page already gets, not on how old it is or what type it is.
 
-![](charts/feature_importance.png)
+![](outputs/feature_importance.png)
 
 Our real surprise happened late, after building the model, and it fooled us for a moment before we caught it. We wondered if adding back the columns we had excluded, `search_volume`, `backlinks`, `word_count`, and `competition`, would help, since maybe together they held more signal than each did alone. When we trained a model with these four columns added, precision at 50 jumped from `0.38` to `0.68`, which looked like a real, exciting improvement at first. But we noticed these four columns have missing values for a lot of pages, so testing this meant dropping any page missing even one of them, leaving only 113,463 rows out of our original 302,692. This smaller group turned out to have a much higher rate of pages with real search impressions, 56.2% compared to 47.8% in the full data, meaning it was simply an easier group of pages to predict on. To check this, we trained our original model, with none of the extra columns, on that same restricted group, and it also jumped, to `0.70`, even higher than the version with the extra columns added. The surprise was this: the improvement had nothing to do with the four columns at all. It came entirely from testing on an easier slice of pages. This is a clean negative result, since we now have proof the columns do not help, instead of just a guess.
 
-![](charts/restricted_vs_full_population.png)
+![](outputs/restricted_vs_full_population.png)
 
 ## 5. Limitations & honest framing
 
